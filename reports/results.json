@@ -1,0 +1,40 @@
+{
+  "startTime": "2025-10-29T06:43:41.275Z",
+  "endTime": "2025-10-29T06:43:45.190Z",
+  "userAgents": [
+    "Chrome 141.0.0.0 / Ubuntu 24.04"
+  ],
+  "passed": 1,
+  "total": 2,
+  "skipped": 0,
+  "fixtures": [
+    {
+      "name": "Flaky Tests Demo",
+      "path": "/home/ubuntu/testcafe-demo/tests/flaky-test.js",
+      "meta": {},
+      "tests": [
+        {
+          "name": "Flaky Test 1",
+          "meta": {},
+          "errs": [
+            "AssertionError: Random failure occurred!: expected false to be truthy\n\nBrowser: Chrome 141.0.0.0 / Ubuntu 24.04\n\n    4 |    .page`https://example.com`;\n    5 |\n    6 |test('Flaky Test 1', async t => {\n    7 |    const randomFail = Math.random() < 0.5; // 50% chance to fail\n    8 |    await t.expect(true).ok();\n >  9 |    if (randomFail) await t.expect(false).ok('Random failure occurred!');\n   10 |});\n   11 |\n   12 |test('Flaky Test 2', async t => {\n   13 |    const randomFail = Math.random() < 0.3; // 30% chance to fail\n   14 |    await t.expect(true).ok();\n\n   at <anonymous> (/home/ubuntu/testcafe-demo/tests/flaky-test.js:9:43)\n   at asyncGeneratorStep (/home/ubuntu/testcafe-demo/tests/flaky-test.js:1:37)\n   at _next (/home/ubuntu/testcafe-demo/tests/flaky-test.js:1:37)"
+          ],
+          "durationMs": 1157,
+          "unstable": false,
+          "screenshotPath": null,
+          "skipped": false
+        },
+        {
+          "name": "Flaky Test 2",
+          "meta": {},
+          "errs": [],
+          "durationMs": 433,
+          "unstable": false,
+          "screenshotPath": null,
+          "skipped": false
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

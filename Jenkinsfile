@@ -50,19 +50,25 @@ pipeline {
             }
         }
 
-        stage('Notify & Archive') {
+        stage('Notify Persistent Failures') {
+            when {
+                expression { fileExists(env.PERSISTENT_FAIL_FILE) }
+            }
             steps {
                 script {
-                    if (fileExists(env.PERSISTENT_FAIL_FILE)) {
-                        emailext(
-                            subject: "Persistent Test Failures Detected",
-                            to: "${EMAIL_RECIPIENTS}",
-                            body: "<h3>Persistent Failures after ${MAX_RETRIES} retries:</h3><pre>${readFile(env.PERSISTENT_FAIL_FILE)}</pre><br>Check details: ${env.BUILD_URL}",
-                            attachLog: true
-                        )
-                    }
-                    archiveArtifacts artifacts: 'reports/*.json', fingerprint: true
+                    emailext(
+                        subject: "Persistent Test Failures Detected",
+                        to: "${EMAIL_RECIPIENTS}",
+                        body: "<h3>Persistent Failures after ${MAX_RETRIES} retries:</h3><pre>${readFile(env.PERSISTENT_FAIL_FILE)}</pre><br>Check details: ${env.BUILD_URL}",
+                        attachLog: true
+                    )
                 }
+            }
+        }
+
+        stage('Archive Reports') {
+            steps {
+                archiveArtifacts artifacts: 'reports/*.json', fingerprint: true
             }
         }
     }

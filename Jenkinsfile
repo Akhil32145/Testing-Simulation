@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        MAX_RETRIES = 8 
+        MAX_RETRIES = 15 
         REPORT_PATH = "reports/results.json"
         PERSISTENT_FAIL_FILE = "reports/persistent_failures.json"
         EMAIL_RECIPIENTS = "akhilkhan26202@gmail.com" 

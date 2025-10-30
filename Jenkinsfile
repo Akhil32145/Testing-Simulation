@@ -2,13 +2,14 @@ pipeline {
     agent any
 
     environment {
-        MAX_RETRIES = 10 
+        MAX_RETRIES = 5 
         REPORT_PATH = "reports/results.json"
         PERSISTENT_FAIL_FILE = "reports/persistent_failures.json"
         EMAIL_RECIPIENTS = "akhilkhan26202@gmail.com" 
     }
 
     triggers {
+        cron('* * * * *')
         pollSCM('H/5 * * * *')
     }
 

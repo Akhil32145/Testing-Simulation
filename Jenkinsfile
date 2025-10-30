@@ -26,6 +26,7 @@ pipeline {
                 script {
                     def retries = 0
                     def persistentFails = []
+
                     while (retries < env.MAX_RETRIES.toInteger() && fileExists(env.REPORT_PATH)) {
                         def results = readJSON(file: env.REPORT_PATH)
                         def failedTests = results?.fixtures?.collectMany { f ->
@@ -36,11 +37,15 @@ pipeline {
 
                         echo "Retry #${retries+1} for failed tests: ${failedTests}"
                         failedTests.each { sh "npx testcafe 'chromium:headless' tests/ -t '${it}' --reporter json:${REPORT_PATH} || true" }
+
                         retries++
                         if (retries == env.MAX_RETRIES.toInteger()) persistentFails = failedTests
                     }
-                    if (persistentFails) writeJSON file: env.PERSISTENT_FAIL_FILE, json: [persistent_failures: persistentFails]
-                    currentBuild.result = persistentFails ? 'UNSTABLE' : 'SUCCESS'
+
+                    if (persistentFails) {
+                        writeJSON file: env.PERSISTENT_FAIL_FILE, json: [persistent_failures: persistentFails]
+                        currentBuild.result = 'UNSTABLE'
+                    }
                 }
             }
         }

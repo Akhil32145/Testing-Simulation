@@ -53,32 +53,6 @@ pipeline {
             }
         }
 
-        stage('Notify Persistent Failures') {
-            when {
-                expression { fileExists(env.PERSISTENT_FAIL_FILE) }
-            }
-            steps {
-                script {
-                    def persistentContent = readJSON(file: env.PERSISTENT_FAIL_FILE).persistent_failures
-                    def htmlTable = "<table border='1' cellpadding='5'><tr><th>Failed Test Name</th></tr>"
-                    persistentContent.each { test ->
-                        htmlTable += "<tr><td>${test}</td></tr>"
-                    }
-                    htmlTable += "</table>"
-
-                    emailext(
-                        subject: "Jenkins Build Unstable: Persistent Test Failures Detected",
-                        to: "${EMAIL_RECIPIENTS}",
-                        body: """<h3>Persistent Failures after ${MAX_RETRIES} retries:</h3>
-                                ${htmlTable}
-                                <br>Check details at: <a href='${env.BUILD_URL}'>${env.BUILD_URL}</a>""",
-                        mimeType: 'text/html',
-                        attachLog: true
-                    )
-                }
-            }
-        }
-
         stage('Archive Reports') {
             steps {
                 archiveArtifacts artifacts: 'reports/*.json', fingerprint: true
@@ -87,14 +61,23 @@ pipeline {
     }
 
     post {
-        unstable {
+        always {
             script {
-                // Fallback email if persistent fail stage is skipped
-                if (!fileExists(env.PERSISTENT_FAIL_FILE)) {
+                if (fileExists(env.PERSISTENT_FAIL_FILE)) {
+                    def persistentContent = readJSON(file: env.PERSISTENT_FAIL_FILE).persistent_failures
+                    def htmlTable = "<table border='1' cellpadding='5'><tr><th>Failed Test Name</th></tr>"
+                    persistentContent.each { test ->
+                        htmlTable += "<tr><td>${test}</td></tr>"
+                    }
+                    htmlTable += "</table>"
+
                     emailext(
-                        subject: "Jenkins Build Unstable",
+                        subject: "Jenkins Build Notification: Persistent Test Failures",
                         to: "${EMAIL_RECIPIENTS}",
-                        body: "The build finished UNSTABLE. Check console output at ${env.BUILD_URL}",
+                        body: """<h3>Persistent Failures after ${MAX_RETRIES} retries:</h3>
+                                ${htmlTable}
+                                <br>Check details at: <a href='${env.BUILD_URL}'>${env.BUILD_URL}</a>""",
+                        mimeType: 'text/html',
                         attachLog: true
                     )
                 }

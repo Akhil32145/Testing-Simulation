@@ -44,7 +44,7 @@ pipeline {
 
                     if (persistentFails) {
                         writeJSON file: env.PERSISTENT_FAIL_FILE, json: [persistent_failures: persistentFails]
-                        currentBuild.result = 'UNSTABLE'
+                        currentBuild.result = 'UNSTABLE' // Mark build as unstable to trigger email
                     }
                 }
             }
@@ -56,10 +56,14 @@ pipeline {
             }
             steps {
                 script {
+                    def persistentContent = readFile(env.PERSISTENT_FAIL_FILE)
                     emailext(
-                        subject: "Persistent Test Failures Detected",
+                        subject: "Jenkins Build Unstable: Persistent Test Failures Detected",
                         to: "${EMAIL_RECIPIENTS}",
-                        body: "<h3>Persistent Failures after ${MAX_RETRIES} retries:</h3><pre>${readFile(env.PERSISTENT_FAIL_FILE)}</pre><br>Check details: ${env.BUILD_URL}",
+                        body: """<h3>Persistent Failures after ${MAX_RETRIES} retries:</h3>
+                                <pre>${persistentContent}</pre>
+                                <br>Check details at: <a href='${env.BUILD_URL}'>${env.BUILD_URL}</a>""",
+                        mimeType: 'text/html',
                         attachLog: true
                     )
                 }
@@ -69,6 +73,22 @@ pipeline {
         stage('Archive Reports') {
             steps {
                 archiveArtifacts artifacts: 'reports/*.json', fingerprint: true
+            }
+        }
+    }
+
+    post {
+        unstable {
+            script {
+                // Ensure email is sent if build is unstable but Notify Persistent Failures stage skipped
+                if (!fileExists(env.PERSISTENT_FAIL_FILE)) {
+                    emailext(
+                        subject: "Jenkins Build Unstable",
+                        to: "${EMAIL_RECIPIENTS}",
+                        body: "The build finished UNSTABLE. Check console output at ${env.BUILD_URL}",
+                        attachLog: true
+                    )
+                }
             }
         }
     }

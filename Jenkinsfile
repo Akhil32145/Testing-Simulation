@@ -29,6 +29,7 @@ pipeline {
 
                     while (retries < env.MAX_RETRIES.toInteger() && fileExists(env.REPORT_PATH)) {
                         def results = readJSON(file: env.REPORT_PATH)
+                        // Collect only failed tests
                         def failedTests = results?.fixtures?.collectMany { f ->
                             f.tests?.findAll { t -> t?.errs?.size() > 0 }?.collect { it.name } ?: []
                         } ?: []
@@ -36,7 +37,9 @@ pipeline {
                         if (failedTests.isEmpty()) break
 
                         echo "Retry #${retries+1} for failed tests: ${failedTests}"
-                        failedTests.each { sh "npx testcafe 'chromium:headless' tests/ -t '${it}' --reporter json:${REPORT_PATH} || true" }
+                        failedTests.each { testName ->
+                            sh "npx testcafe 'chromium:headless' tests/ -t '${testName}' --reporter json:${REPORT_PATH} || true"
+                        }
 
                         retries++
                         if (retries == env.MAX_RETRIES.toInteger()) persistentFails = failedTests
@@ -44,7 +47,7 @@ pipeline {
 
                     if (persistentFails) {
                         writeJSON file: env.PERSISTENT_FAIL_FILE, json: [persistent_failures: persistentFails]
-                        currentBuild.result = 'UNSTABLE' // Mark build as unstable to trigger email
+                        currentBuild.result = 'UNSTABLE'
                     }
                 }
             }
@@ -56,12 +59,18 @@ pipeline {
             }
             steps {
                 script {
-                    def persistentContent = readFile(env.PERSISTENT_FAIL_FILE)
+                    def persistentContent = readJSON(file: env.PERSISTENT_FAIL_FILE).persistent_failures
+                    def htmlTable = "<table border='1' cellpadding='5'><tr><th>Failed Test Name</th></tr>"
+                    persistentContent.each { test ->
+                        htmlTable += "<tr><td>${test}</td></tr>"
+                    }
+                    htmlTable += "</table>"
+
                     emailext(
                         subject: "Jenkins Build Unstable: Persistent Test Failures Detected",
                         to: "${EMAIL_RECIPIENTS}",
                         body: """<h3>Persistent Failures after ${MAX_RETRIES} retries:</h3>
-                                <pre>${persistentContent}</pre>
+                                ${htmlTable}
                                 <br>Check details at: <a href='${env.BUILD_URL}'>${env.BUILD_URL}</a>""",
                         mimeType: 'text/html',
                         attachLog: true
@@ -80,7 +89,7 @@ pipeline {
     post {
         unstable {
             script {
-                // Ensure email is sent if build is unstable but Notify Persistent Failures stage skipped
+                // Fallback email if persistent fail stage is skipped
                 if (!fileExists(env.PERSISTENT_FAIL_FILE)) {
                     emailext(
                         subject: "Jenkins Build Unstable",

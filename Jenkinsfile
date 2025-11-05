@@ -1,16 +1,18 @@
 pipeline {
     agent any
 
+    // ⏱️ Run every 3 minutes
+    triggers {
+        cron('H/3 * * * *')
+    }
+
+    // 🧠 Jenkins Parameters (visible on the build page)
     parameters {
         string(
             name: 'MAX_RETRIES',
             defaultValue: '3',
-            description: 'Number of times to retry failed tests before marking as persistent failures'
+            description: 'Number of times to retry failed tests before marking them as persistent failures.'
         )
-    }
-
-    triggers {
-        cron('H/3 * * * *') // runs every 3 minutes
     }
 
     environment {
@@ -39,29 +41,34 @@ pipeline {
         stage('Run & Retry Tests') {
             steps {
                 script {
-                    def maxRetries = params.MAX_RETRIES.toInteger()
-                    def tests = [
-                        'LoginTest', 'SignupTest', 'SearchTest', 'CheckoutTest', 'ProfileUpdateTest',
-                        'LogoutTest', 'AddToCartTest', 'RemoveFromCartTest', 'PaymentTest',
-                        'OrderHistoryTest', 'FilterTest', 'SortTest', 'WishlistTest', 'ReviewTest', 'NotificationTest'
-                    ]
-                    def persistFails = []
-
                     sh "mkdir -p ${REPORT_DIR}"
 
-                    for (i = 1; i <= maxRetries && tests; i++) {
-                        echo "🔁 Retry #${i} for: ${tests}"
+                    // Define all test names
+                    def tests = [
+                        'LoginTest', 'SignupTest', 'SearchTest', 'CheckoutTest',
+                        'ProfileUpdateTest', 'LogoutTest', 'AddToCartTest', 'RemoveFromCartTest',
+                        'PaymentTest', 'OrderHistoryTest', 'FilterTest', 'SortTest',
+                        'WishlistTest', 'ReviewTest', 'NotificationTest'
+                    ]
+
+                    def failedTests = tests
+                    def persistFails = []
+
+                    for (int i = 1; i <= params.MAX_RETRIES.toInteger() && !failedTests.isEmpty(); i++) {
+                        echo "🔁 Retry #${i} for: ${failedTests}"
                         def remain = []
-                        tests.each { testName ->
-                            def status = sh(script: "npx testcafe chromium:headless tests/flaky-test.js -t ${testName} --reporter junit:${REPORT_DIR}/${testName}.xml || true", returnStatus: true)
-                            if (status != 0) remain << testName
+                        failedTests.each { testName ->
+                            def result = sh(script: "npx testcafe chromium:headless tests/flaky-test.js -t ${testName} --reporter junit:${REPORT_DIR}/${testName}.xml", returnStatus: true)
+                            if (result != 0) {
+                                remain << testName
+                            }
                         }
-                        tests = remain
+                        failedTests = remain
                     }
 
-                    if (tests) {
-                        persistFails = tests
-                        echo "🚨 Persistent Failures after ${maxRetries} retries: ${persistFails.join(', ')}"
+                    if (failedTests) {
+                        persistFails = failedTests
+                        echo "🚨 Persistent Failures after ${params.MAX_RETRIES} retries: ${persistFails.join(', ')}"
                         currentBuild.result = 'UNSTABLE'
                     } else {
                         echo "✅ All tests passed after retries"
@@ -73,14 +80,14 @@ pipeline {
         stage('Archive & Publish Reports') {
             steps {
                 archiveArtifacts artifacts: "${REPORT_DIR}/*.xml", fingerprint: true
-                junit allowEmptyResults: true, testResults: "${REPORT_DIR}/*.xml"
+                junit "${REPORT_DIR}/*.xml"
             }
         }
     }
 
     post {
         success {
-            echo "✅ Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+            echo "🎉 Build Succeeded: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
         }
         unstable {
             echo "⚠️ Build Unstable: Persistent test failures detected."

@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     triggers {
-        cron('H/3 * * * *') // adjust schedule as needed
+        cron('H/3 * * * *')
     }
 
     environment {
@@ -18,63 +18,49 @@ pipeline {
     stages {
         stage('Start & Checkout') {
             steps {
-                echo "🚀 Build Started: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+                echo "🚀 Build Started: ${env.JOB_NAME} #${env.BUILD_NUMBER}\n${env.BUILD_URL}"
                 checkout scm
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                sh 'npm install'
-                sh "mkdir -p ${REPORT_DIR}"
             }
         }
 
         stage('Run & Retry Tests') {
             steps {
                 script {
-                    // Define test cases
+                    sh 'npm install'
+                    sh "mkdir -p ${REPORT_DIR}"
+
+                    // Initial test run
+                    sh "npx testcafe chromium:headless tests/ --reporter junit:${REPORT_DIR}/results.xml || true"
+
                     def tests = ['LoginTest', 'SignupTest', 'CheckoutTest', 'FilterTest', 'SortTest', 'ReviewTest',
                                  'SearchTest', 'ProfileTest', 'CartTest', 'WishlistTest', 'NotificationTest',
                                  'LogoutTest', 'SettingsTest', 'PaymentTest', 'FeedbackTest']
                     def persistFails = []
 
-                    echo "Running initial test suite..."
-                    tests.each { testName ->
-                        sh "npx testcafe chromium:headless tests/ -t ${testName} --reporter json:${REPORT_DIR}/${testName}.json || true"
-                    }
-
-                    // Retry logic
+                    // Retry logic for failing tests
                     for (i = 1; i <= MAX_RETRIES.toInteger() && tests; i++) {
                         echo "🔁 Retry #${i} for: ${tests}"
-                        def remaining = []
-                        tests.each { testName ->
-                            def status = sh(script: "npx testcafe chromium:headless tests/ -t ${testName} --reporter json:${REPORT_DIR}/${testName}.json || true", returnStatus: true)
-                            if (status != 0) {
-                                remaining << testName
-                            }
+                        def remain = []
+                        tests.each {
+                            if (sh(script: "npx testcafe chromium:headless tests/ -t ${it} --reporter junit:${REPORT_DIR}/results.xml || true", returnStatus: true) != 0)
+                                remain << it
                         }
-                        tests = remaining
+                        tests = remain
                     }
 
                     if (tests) {
                         persistFails = tests
-                        echo "🚨 Persistently failed tests:"
-                        persistFails.each { failTest ->
-                            echo "❌ ${failTest}"
-                        }
+                        echo "🚨 Persistently failed tests: ${persistFails}"
                         currentBuild.result = 'UNSTABLE'
-                    } else {
-                        echo "✅ All tests passed after retries."
                     }
                 }
             }
         }
 
-        stage('Archive Reports') {
+        stage('Archive & Publish Test Results') {
             steps {
-                archiveArtifacts artifacts: "${REPORT_DIR}/*.json", fingerprint: true
-                echo "📂 Test reports archived in '${REPORT_DIR}'"
+                archiveArtifacts artifacts: "${REPORT_DIR}/*.xml", fingerprint: true
+                junit "${REPORT_DIR}/*.xml"
             }
         }
     }
@@ -84,14 +70,13 @@ pipeline {
             echo "✅ Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
         }
         unstable {
-            echo "⚠️ Build Unstable: Some tests persistently failed"
+            echo "⚠️ Build Unstable: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nSome tests failed persistently."
         }
         failure {
             echo "❌ Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
         }
         always {
-            echo "Pipeline finished. Check '${REPORT_DIR}' for test results."
+            echo "Pipeline done. Reports in ${REPORT_DIR}."
         }
     }
 }
-

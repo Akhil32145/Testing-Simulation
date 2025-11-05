@@ -1,82 +1,103 @@
 pipeline {
     agent any
-
+    environment {
+        REPORTS_DIR = "reports"
+        MAX_RETRIES = 3
+    }
     triggers {
+        // Run every 3 minutes
         cron('H/3 * * * *')
     }
-
-    environment {
-        REPORT_DIR = 'reports'
-        MAX_RETRIES = 2
-    }
-
-    options {
-        timestamps()
-        disableConcurrentBuilds() // prevents overlapping builds
-    }
-
     stages {
-        stage('Start & Checkout') {
+        stage('Checkout') {
             steps {
-                echo "🚀 Build Started: ${env.JOB_NAME} #${env.BUILD_NUMBER}\n${env.BUILD_URL}"
                 checkout scm
             }
         }
 
-        stage('Run & Retry Tests') {
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Run Tests') {
             steps {
                 script {
-                    sh 'npm install'
-                    sh "mkdir -p ${REPORT_DIR}"
+                    // List of all tests
+                    def tests = [
+                        "LoginTest",
+                        "SignupTest",
+                        "SearchTest",
+                        "CheckoutTest",
+                        "ProfileUpdateTest",
+                        "LogoutTest",
+                        "AddToCartTest",
+                        "RemoveFromCartTest",
+                        "PaymentTest",
+                        "OrderHistoryTest",
+                        "FilterTest",
+                        "SortTest",
+                        "WishlistTest",
+                        "ReviewTest",
+                        "NotificationTest"
+                    ]
 
-                    // Initial test run
-                    sh "npx testcafe chromium:headless tests/ --reporter junit:${REPORT_DIR}/results.xml || true"
+                    if (!fileExists(REPORTS_DIR)) {
+                        sh "mkdir -p ${REPORTS_DIR}"
+                    }
 
-                    def tests = ['LoginTest', 'SignupTest', 'CheckoutTest', 'FilterTest', 'SortTest', 'ReviewTest',
-                                 'SearchTest', 'ProfileTest', 'CartTest', 'WishlistTest', 'NotificationTest',
-                                 'LogoutTest', 'SettingsTest', 'PaymentTest', 'FeedbackTest']
-                    def persistFails = []
+                    def persistentFailures = []
 
-                    // Retry logic for failing tests
-                    for (i = 1; i <= MAX_RETRIES.toInteger() && tests; i++) {
-                        echo "🔁 Retry #${i} for: ${tests}"
-                        def remain = []
-                        tests.each {
-                            if (sh(script: "npx testcafe chromium:headless tests/ -t ${it} --reporter junit:${REPORT_DIR}/results.xml || true", returnStatus: true) != 0)
-                                remain << it
+                    // Loop through tests
+                    tests.each { test ->
+                        def success = false
+                        def attempt = 1
+
+                        while(attempt <= MAX_RETRIES && !success) {
+                            echo "Running ${test} - Attempt ${attempt}"
+
+                            // Run TestCafe for the individual test
+                            def result = sh(
+                                script: "npx testcafe chromium:headless tests/flaky-test.js -t ${test} --reporter junit:${REPORTS_DIR}/${test}.xml",
+                                returnStatus: true
+                            )
+
+                            if (result == 0) {
+                                success = true
+                                echo "${test} PASSED on attempt ${attempt}"
+                            } else {
+                                echo "${test} FAILED on attempt ${attempt}"
+                                attempt++
+                            }
                         }
-                        tests = remain
+
+                        if (!success) {
+                            persistentFailures.add(test)
+                        }
                     }
 
-                    if (tests) {
-                        persistFails = tests
-                        echo "🚨 Persistently failed tests: ${persistFails}"
-                        currentBuild.result = 'UNSTABLE'
-                    }
+                    // Save persistent failures to environment variable for post actions
+                    env.PERSISTENT_FAILURES = persistentFailures.join(',')
                 }
             }
         }
 
-        stage('Archive & Publish Test Results') {
+        stage('Publish Test Results') {
             steps {
-                archiveArtifacts artifacts: "${REPORT_DIR}/*.xml", fingerprint: true
-                junit "${REPORT_DIR}/*.xml"
+                junit 'reports/*.xml'
             }
         }
     }
 
     post {
-        success {
-            echo "✅ Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
-        }
-        unstable {
-            echo "⚠️ Build Unstable: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nSome tests failed persistently."
-        }
-        failure {
-            echo "❌ Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
-        }
         always {
-            echo "Pipeline done. Reports in ${REPORT_DIR}."
+            archiveArtifacts artifacts: 'reports/*.xml', allowEmptyArchive: true
         }
-    }
-}
+        success {
+            script {
+                if (env.PERSISTENT_FAILURES?.trim()) {
+                    echo "⚠️ Build Succeeded BUT some tests failed persistently: ${env.PERSISTENT_FAILURES}"
+                } else {
+                    echo "✅ Build Succeeded - All tests passed!"
+

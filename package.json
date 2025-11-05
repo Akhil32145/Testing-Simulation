@@ -1,15 +1,23 @@
+
 {
   "name": "testcafe-demo",
   "version": "1.0.0",
-  "description": "",
+  "description": "TestCafe demo project with JUnit reporting",
   "main": "index.js",
   "directories": {
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npx testcafe chromium:headless tests/flaky-test.js --reporter junit:reports/results.xml",
+    "test-login": "npx testcafe chromium:headless tests/flaky-test.js -t LoginTest --reporter junit:reports/LoginTest.xml",
+    "test-signup": "npx testcafe chromium:headless tests/flaky-test.js -t SignupTest --reporter junit:reports/SignupTest.xml",
+    "test-all": "npx testcafe chromium:headless tests/flaky-test.js --reporter junit:reports/results.xml"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "testcafe": "^3.7.2",
+    "testcafe-reporter-junit": "^3.0.2"
+  }
 }

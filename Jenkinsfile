@@ -1,16 +1,31 @@
 pipeline {
     agent any
-    environment {
-        REPORTS_DIR = "reports"
-        MAX_RETRIES = 3
+
+    parameters {
+        string(
+            name: 'MAX_RETRIES',
+            defaultValue: '3',
+            description: 'Number of times to retry failed tests before marking as persistent failures'
+        )
     }
+
     triggers {
-        // Run every 3 minutes
-        cron('H/3 * * * *')
+        cron('H/3 * * * *') // runs every 3 minutes
     }
+
+    environment {
+        REPORT_DIR = 'reports'
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
     stages {
         stage('Checkout') {
             steps {
+                echo "🚀 Build Started: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
                 checkout scm
             }
         }
@@ -21,83 +36,61 @@ pipeline {
             }
         }
 
-        stage('Run Tests') {
+        stage('Run & Retry Tests') {
             steps {
                 script {
-                    // List of all tests
+                    def maxRetries = params.MAX_RETRIES.toInteger()
                     def tests = [
-                        "LoginTest",
-                        "SignupTest",
-                        "SearchTest",
-                        "CheckoutTest",
-                        "ProfileUpdateTest",
-                        "LogoutTest",
-                        "AddToCartTest",
-                        "RemoveFromCartTest",
-                        "PaymentTest",
-                        "OrderHistoryTest",
-                        "FilterTest",
-                        "SortTest",
-                        "WishlistTest",
-                        "ReviewTest",
-                        "NotificationTest"
+                        'LoginTest', 'SignupTest', 'SearchTest', 'CheckoutTest', 'ProfileUpdateTest',
+                        'LogoutTest', 'AddToCartTest', 'RemoveFromCartTest', 'PaymentTest',
+                        'OrderHistoryTest', 'FilterTest', 'SortTest', 'WishlistTest', 'ReviewTest', 'NotificationTest'
                     ]
+                    def persistFails = []
 
-                    if (!fileExists(REPORTS_DIR)) {
-                        sh "mkdir -p ${REPORTS_DIR}"
+                    sh "mkdir -p ${REPORT_DIR}"
+
+                    for (i = 1; i <= maxRetries && tests; i++) {
+                        echo "🔁 Retry #${i} for: ${tests}"
+                        def remain = []
+                        tests.each { testName ->
+                            def status = sh(script: "npx testcafe chromium:headless tests/flaky-test.js -t ${testName} --reporter junit:${REPORT_DIR}/${testName}.xml || true", returnStatus: true)
+                            if (status != 0) remain << testName
+                        }
+                        tests = remain
                     }
 
-                    def persistentFailures = []
-
-                    // Loop through tests
-                    tests.each { test ->
-                        def success = false
-                        def attempt = 1
-
-                        while(attempt <= MAX_RETRIES && !success) {
-                            echo "Running ${test} - Attempt ${attempt}"
-
-                            // Run TestCafe for the individual test
-                            def result = sh(
-                                script: "npx testcafe chromium:headless tests/flaky-test.js -t ${test} --reporter junit:${REPORTS_DIR}/${test}.xml",
-                                returnStatus: true
-                            )
-
-                            if (result == 0) {
-                                success = true
-                                echo "${test} PASSED on attempt ${attempt}"
-                            } else {
-                                echo "${test} FAILED on attempt ${attempt}"
-                                attempt++
-                            }
-                        }
-
-                        if (!success) {
-                            persistentFailures.add(test)
-                        }
+                    if (tests) {
+                        persistFails = tests
+                        echo "🚨 Persistent Failures after ${maxRetries} retries: ${persistFails.join(', ')}"
+                        currentBuild.result = 'UNSTABLE'
+                    } else {
+                        echo "✅ All tests passed after retries"
                     }
-
-                    // Save persistent failures to environment variable for post actions
-                    env.PERSISTENT_FAILURES = persistentFailures.join(',')
                 }
             }
         }
 
-        stage('Publish Test Results') {
+        stage('Archive & Publish Reports') {
             steps {
-                junit 'reports/*.xml'
+                archiveArtifacts artifacts: "${REPORT_DIR}/*.xml", fingerprint: true
+                junit allowEmptyResults: true, testResults: "${REPORT_DIR}/*.xml"
             }
         }
     }
 
     post {
-        always {
-            archiveArtifacts artifacts: 'reports/*.xml', allowEmptyArchive: true
-        }
         success {
-            script {
-                if (env.PERSISTENT_FAILURES?.trim()) {
-                    echo "⚠️ Build Succeeded BUT some tests failed persistently: ${env.PERSISTENT_FAILURES}"
-                } else {
-                    echo "✅ Build Succeeded - All tests passed!"
+            echo "✅ Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+        }
+        unstable {
+            echo "⚠️ Build Unstable: Persistent test failures detected."
+        }
+        failure {
+            echo "❌ Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+        }
+        always {
+            echo "📘 Reports saved under '${REPORT_DIR}'"
+        }
+    }
+}
 

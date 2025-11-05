@@ -2,14 +2,14 @@ pipeline {
     agent any
 
     triggers {
-        cron('H/3 * * * *') // every 3 minutes
+        cron('H/3 * * * *')
     }
 
     environment {
         REPORT_DIR = 'reports'
-        SLACK_CHANNEL = '#testing-simulation'
+        SLACK_CHANNEL = '#all-testing-simulation'
         SLACK_CREDENTIAL_ID = 'Bot-token-ID'
-        MAX_RETRIES = 5
+        MAX_RETRIES = 2
     }
 
     options {
@@ -23,7 +23,8 @@ pipeline {
                 slackSend(
                     channel: SLACK_CHANNEL,
                     color: '#439FE0',
-                    message: "🚀 *Build Started:* ${env.JOB_NAME} #${env.BUILD_NUMBER}\n${env.BUILD_URL}"
+                    message: "🚀 *Build Started:* ${env.JOB_NAME} #${env.BUILD_NUMBER}\n${env.BUILD_URL}",
+                    tokenCredentialId: SLACK_CREDENTIAL_ID
                 )
                 checkout scm
             }
@@ -61,7 +62,8 @@ pipeline {
 *Build:* ${env.JOB_NAME} #${env.BUILD_NUMBER}
 *Failed after ${MAX_RETRIES} retries:*
 ${persistFails.join('\n')}
-🔗 ${env.BUILD_URL}"""
+🔗 ${env.BUILD_URL}""",
+                            tokenCredentialId: SLACK_CREDENTIAL_ID
                         )
                         currentBuild.result = 'UNSTABLE'
                     }
@@ -78,13 +80,28 @@ ${persistFails.join('\n')}
 
     post {
         success {
-            slackSend(channel: SLACK_CHANNEL, color: '#36a64f', message: "✅ *Success:* ${env.JOB_NAME} #${env.BUILD_NUMBER}\n${env.BUILD_URL}")
+            slackSend(
+                channel: SLACK_CHANNEL,
+                color: '#36a64f',
+                message: "✅ *Success:* ${env.JOB_NAME} #${env.BUILD_NUMBER}\n${env.BUILD_URL}",
+                tokenCredentialId: SLACK_CREDENTIAL_ID
+            )
         }
         unstable {
-            slackSend(channel: SLACK_CHANNEL, color: '#FFA500', message: "⚠️ *Unstable:* ${env.JOB_NAME} #${env.BUILD_NUMBER}\nSome tests persistently failed.\n${env.BUILD_URL}")
+            slackSend(
+                channel: SLACK_CHANNEL,
+                color: '#FFA500',
+                message: "⚠️ *Unstable:* ${env.JOB_NAME} #${env.BUILD_NUMBER}\nSome tests persistently failed.\n${env.BUILD_URL}",
+                tokenCredentialId: SLACK_CREDENTIAL_ID
+            )
         }
         failure {
-            slackSend(channel: SLACK_CHANNEL, color: '#FF0000', message: "❌ *Failed:* ${env.JOB_NAME} #${env.BUILD_NUMBER}\n${env.BUILD_URL}")
+            slackSend(
+                channel: SLACK_CHANNEL,
+                color: '#FF0000',
+                message: "❌ *Failed:* ${env.JOB_NAME} #${env.BUILD_NUMBER}\n${env.BUILD_URL}",
+                tokenCredentialId: SLACK_CREDENTIAL_ID
+            )
         }
         always {
             echo "Pipeline done. Reports in ${REPORT_DIR}."

@@ -1,5 +1,5 @@
 pipeline {
-    agent { label 'ubuntu-agent' }  // ✅ Run this pipeline on the SSH agent instead of master
+    agent { label 'ubuntu-agent' }  // ✅ Run this pipeline on the SSH agent
 
     parameters {
         string(name: 'RETRY_COUNT', defaultValue: '2', description: 'Number of retries for failed tests')
@@ -43,11 +43,4 @@ pipeline {
 
                         echo "🔁 Retry #${attempt} for: ${failedTests}"
                         def currentFailures = []
-
-                        // Run tests in parallel batches to speed up
-                        def parallelTasks = [:]
-                        failedTests.collate(4).eachWithIndex { batch, i ->
-                            parallelTasks["Batch_${i+1}"] = {
-                                batch.each { test ->
-                                    sh(script: "
 

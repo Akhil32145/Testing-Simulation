@@ -27,11 +27,9 @@ pipeline {
             steps {
                 script {
                     def retries = params.RETRY_COUNT.toInteger()
-                    def allTests = [
-                        "LoginTest","SignupTest","SearchTest","CheckoutTest","ProfileUpdateTest",
-                        "LogoutTest","AddToCartTest","RemoveFromCartTest","PaymentTest",
-                        "OrderHistoryTest","FilterTest","SortTest","WishlistTest","ReviewTest","NotificationTest"
-                    ]
+                    def allTests = ["LoginTest","SignupTest","SearchTest","CheckoutTest","ProfileUpdateTest",
+                                    "LogoutTest","AddToCartTest","RemoveFromCartTest","PaymentTest",
+                                    "OrderHistoryTest","FilterTest","SortTest","WishlistTest","ReviewTest","NotificationTest"]
 
                     def failedTests = allTests
 
@@ -42,30 +40,42 @@ pipeline {
                         }
 
                         echo "🔁 Retry #${attempt} for: ${failedTests}"
-                        def currentFailures = []
 
-                        // Run tests concurrently 2 at a time
-                        failedTests.collate(2).each { testBatch ->
-                            def batchResults = []
-                            testBatch.each { test ->
-                                sh(script: "npx testcafe 'chromium:headless' tests/flaky-test.js -t ${test} --concurrency 2 --reporter junit:${env.REPORT_DIR}/${test}.xml || true", returnStatus: true)
-                                def resultXml = readFile("${env.REPORT_DIR}/${test}.xml")
-                                if (resultXml.contains('failures=\"1\"')) {
-                                    batchResults.add(test)
+                        // Split failed tests into batches for parallel execution
+                        def parallelSteps = [:]
+                        failedTests.collate(4).eachWithIndex { testBatch, idx ->
+                            def batchName = "Batch_${idx+1}"
+                            parallelSteps[batchName] = {
+                                testBatch.each { test ->
+                                    sh """
+                                    npx testcafe 'chromium:headless' tests/flaky-test.js -t ${test} \
+                                    --concurrency 2 --reporter junit:${env.REPORT_DIR}/${test}.xml || true
+                                    """
                                 }
                             }
-                            currentFailures.addAll(batchResults)
+                        }
+
+                        // Run batches in parallel
+                        parallel parallelSteps
+
+                        // Collect failed tests by checking XML
+                        def currentFailures = []
+                        failedTests.each { test ->
+                            def resultXml = readFile("${env.REPORT_DIR}/${test}.xml")
+                            if (resultXml.contains('failures="1"')) {
+                                currentFailures.add(test)
+                            }
                         }
 
                         failedTests = currentFailures
                     }
 
                     if (failedTests.isEmpty()) {
-                        echo "✅ All tests passed after retries"
                         currentBuild.result = 'SUCCESS'
+                        echo "✅ All tests passed after retries"
                     } else {
-                        echo "⚠️ Persistent failures after ${retries} retries: ${failedTests}"
                         currentBuild.result = 'UNSTABLE'
+                        echo "⚠️ Persistent failures after ${retries} retries: ${failedTests}"
                     }
                 }
             }
@@ -74,17 +84,8 @@ pipeline {
         stage('Archive & Publish Reports') {
             steps {
                 archiveArtifacts artifacts: 'reports/*.xml', allowEmptyArchive: true
-                junit allowEmptyResults: true, testResults: 'reports/*.xml'
-
-                script {
-                    // ✅ Ensure build remains SUCCESS if all retries passed
-                    if (currentBuild.result == null || currentBuild.result == 'SUCCESS') {
-                        echo "📘 Reports saved under 'reports' — Build marked as SUCCESS"
-                        currentBuild.result = 'SUCCESS'
-                    } else {
-                        echo "📘 Reports saved under 'reports' — Some tests remained unstable"
-                    }
-                }
+                junit 'reports/*.xml'
+                echo "📘 Reports saved under 'reports'"
             }
         }
     }

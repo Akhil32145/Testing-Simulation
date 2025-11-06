@@ -27,44 +27,41 @@ pipeline {
             steps {
                 script {
                     def retries = params.RETRY_COUNT.toInteger()
-                    def allTests = [
-                        "LoginTest","SignupTest","SearchTest","CheckoutTest","ProfileUpdateTest",
-                        "LogoutTest","AddToCartTest","RemoveFromCartTest","PaymentTest",
-                        "OrderHistoryTest","FilterTest","SortTest","WishlistTest","ReviewTest","NotificationTest"
-                    ]
+                    def success = false
 
-                    def failedTests = allTests
+                    // Ensure report directory exists
+                    sh "mkdir -p ${env.REPORT_DIR}"
 
                     for (int attempt = 1; attempt <= retries; attempt++) {
-                        if (failedTests.isEmpty()) {
-                            echo "✅ All tests passed before reaching retry #${attempt}"
+                        echo "🔁 Attempt #${attempt}: Running all tests together with concurrency 4"
+
+                        // Run all tests once, collect results
+                        def status = sh(
+                            script: """
+                                npx testcafe chromium:headless tests/flaky-test.js \
+                                --concurrency 4 \
+                                --reporter junit:${env.REPORT_DIR}/all-tests.xml || true
+                            """,
+                            returnStatus: true
+                        )
+
+                        // Read XML result to check if there were any failures
+                        def resultXml = readFile("${env.REPORT_DIR}/all-tests.xml")
+
+                        if (!resultXml.contains('failures="') || resultXml.contains('failures="0"')) {
+                            echo "✅ All tests passed on attempt #${attempt}"
+                            success = true
                             break
+                        } else {
+                            echo "⚠️ Some tests failed on attempt #${attempt}, retrying..."
                         }
-
-                        echo "🔁 Retry #${attempt} for: ${failedTests}"
-                        def currentFailures = []
-
-                        // Run tests concurrently 2 at a time
-                        failedTests.collate(2).each { testBatch ->
-                            def batchResults = []
-                            testBatch.each { test ->
-                                sh(script: "npx testcafe 'chromium:headless' tests/flaky-test.js -t ${test} --concurrency 2 --reporter junit:${env.REPORT_DIR}/${test}.xml || true", returnStatus: true)
-                                def resultXml = readFile("${env.REPORT_DIR}/${test}.xml")
-                                if (resultXml.contains('failures=\"1\"')) {
-                                    batchResults.add(test)
-                                }
-                            }
-                            currentFailures.addAll(batchResults)
-                        }
-
-                        failedTests = currentFailures
                     }
 
-                    if (failedTests.isEmpty()) {
+                    if (success) {
                         echo "✅ All tests passed after retries"
                         currentBuild.result = 'SUCCESS'
                     } else {
-                        echo "⚠️ Persistent failures after ${retries} retries: ${failedTests}"
+                        echo "⚠️ Tests still failing after ${retries} retries"
                         currentBuild.result = 'UNSTABLE'
                     }
                 }
@@ -77,7 +74,6 @@ pipeline {
                 junit allowEmptyResults: true, testResults: 'reports/*.xml'
 
                 script {
-                    // ✅ Ensure build remains SUCCESS if all retries passed
                     if (currentBuild.result == null || currentBuild.result == 'SUCCESS') {
                         echo "📘 Reports saved under 'reports' — Build marked as SUCCESS"
                         currentBuild.result = 'SUCCESS'

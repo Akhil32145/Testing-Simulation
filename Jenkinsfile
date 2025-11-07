@@ -11,14 +11,14 @@ pipeline {
 
     environment {
         REPORT_DIR = 'reports'
-        SLACK_CHANNEL = '#jenkins-notifications' // Your Slack channel
-        SLACK_USER = 'jenkins-bot'             // Your bot name
+        SLACK_CHANNEL = '#jenkins-notifications'
+        SLACK_USER = 'jenkins-bot'
+        REPORT_URL = "${env.BUILD_URL}artifact/reports/index.html" // link to HTML report
     }
 
     stages {
         stage('Prepare Workspace') {
             steps {
-                // Ensure reports folder exists
                 sh "mkdir -p ${env.WORKSPACE}/${REPORT_DIR}"
             }
         }
@@ -79,8 +79,6 @@ pipeline {
                     script {
                         def failedTestsList = fileExists("${REPORT_DIR}/failures.txt") ? readFile("${REPORT_DIR}/failures.txt").trim() : ""
                         def isFailure = failedTestsList && failedTestsList != ""
-
-                        // Format failed tests for Slack
                         def failedTestsFormatted = isFailure ? failedTestsList.split('\n').collect { it }.join(', ') : "None"
 
                         slackSend(
@@ -90,7 +88,7 @@ pipeline {
 • Failed Tests: ${failedTestsFormatted}
 • Retries Used: ${params.RETRY_COUNT}
 • Duration: ${currentBuild.durationString}
-• Report: Open HTML Report
+• Report: <${env.REPORT_URL}|Open HTML Report>
 :robot_face: Jenkins CI Bot"""
                         )
 

@@ -16,6 +16,13 @@ pipeline {
     }
 
     stages {
+        stage('Prepare Workspace') {
+            steps {
+                // Ensure reports folder exists
+                sh "mkdir -p ${env.WORKSPACE}/${REPORT_DIR}"
+            }
+        }
+
         stage('Checkout') {
             steps { checkout scm }
         }
@@ -59,7 +66,7 @@ pipeline {
                             failedTests = currentFailures
                         }
 
-                        // Save failures for Slack report
+                        // Save failures for Slack
                         writeFile file: "${REPORT_DIR}/failures.txt", text: failedTests.join('\n')
                     }
                 }
@@ -73,25 +80,22 @@ pipeline {
                         def failedTestsList = fileExists("${REPORT_DIR}/failures.txt") ? readFile("${REPORT_DIR}/failures.txt").trim() : ""
                         def isFailure = failedTestsList && failedTestsList != ""
 
+                        // Format failed tests for Slack
+                        def failedTestsFormatted = isFailure ? failedTestsList.split('\n').collect { it }.join(', ') : "None"
+
+                        slackSend(
+                            channel: env.SLACK_CHANNEL,
+                            color: isFailure ? '#FFA500' : '#36a64f',
+                            message: """${isFailure ? ':warning: Build Unstable — Some Tests Failed' : ':white_check_mark: Build Successful — All Tests Passed'}
+• Failed Tests: ${failedTestsFormatted}
+• Retries Used: ${params.RETRY_COUNT}
+• Duration: ${currentBuild.durationString}
+• Report: Open HTML Report
+:robot_face: Jenkins CI Bot"""
+                        )
+
                         if (isFailure) {
-                            slackSend(
-                                channel: env.SLACK_CHANNEL,
-                                color: '#FF0000',
-                                message: """*🚨 Build #${env.BUILD_NUMBER} - Some Tests Failed After ${params.RETRY_COUNT} Retries*
-• Failed Tests: ${failedTestsList.split('\\n').collect { it }.join(', ')}
-• Retries Used: ${params.RETRY_COUNT}
-"""
-                            )
                             currentBuild.result = 'UNSTABLE'
-                        } else {
-                            slackSend(
-                                channel: env.SLACK_CHANNEL,
-                                color: '#36a64f',
-                                message: """*✅ Build #${env.BUILD_NUMBER} - All Tests Passed Successfully*
-• Failed Tests: None
-• Retries Used: ${params.RETRY_COUNT}
-"""
-                            )
                         }
                     }
                 }

@@ -1,10 +1,6 @@
 pipeline {
     agent { label 'ubuntu-agent' }
 
-    triggers {
-        cron('H/2 * * * *') // every 2 minutes
-    }
-
     parameters {
         string(name: 'RETRY_COUNT', defaultValue: '3', description: 'Number of retries for failed tests')
     }

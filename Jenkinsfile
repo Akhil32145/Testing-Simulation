@@ -132,8 +132,8 @@ pipeline {
                 }
             }
         }
-
-        // --- 🆕 Publish the HTML summary in Jenkins UI ---
+        sh 'ls -R reports || echo "No reports directory found"'
+        
         stage('Publish Test Summary') {
             steps {
                 publishHTML([

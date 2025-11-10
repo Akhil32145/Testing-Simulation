@@ -1,10 +1,6 @@
 pipeline {
     agent { label 'ubuntu-agent' }
 
-    triggers{
-        cron('* * * * *')
-    }
-
     parameters {
         string(name: 'RETRY_COUNT', defaultValue: '3', description: 'Number of retries for failed tests')
     }
@@ -24,7 +20,9 @@ pipeline {
         }
 
         stage('Checkout') {
-            steps { checkout scm }
+            steps {
+                checkout scm
+            }
         }
 
         stage('Install Dependencies') {
@@ -69,7 +67,7 @@ pipeline {
                         // Save failures for Slack
                         writeFile file: "${REPORT_DIR}/failures.txt", text: failedTests.join('\n')
 
-                        // --- 🆕 Generate a friendly HTML summary for Jenkins UI ---
+                        // Generate a friendly HTML summary for Jenkins UI
                         def summaryHtml = """
                         <html>
                         <head>
@@ -101,6 +99,9 @@ pipeline {
                         </html>
                         """
                         writeFile file: "${REPORT_DIR}/summary.html", text: summaryHtml
+
+                        // Debug check - verify file exists
+                        sh 'ls -R reports || echo "No reports directory found"'
                     }
                 }
             }
@@ -132,19 +133,26 @@ pipeline {
                 }
             }
         }
-        sh 'ls -R reports || echo "No reports directory found"'
-        
-        stage('Publish Test Summary') {
+
+        stage('Publish & Archive Summary') {
             steps {
-                publishHTML([
-                    allowMissing: false,
-                    alwaysLinkToLastBuild: true,
-                    keepAll: true,
-                    reportDir: "${REPORT_DIR}",
-                    reportFiles: 'summary.html',
-                    reportName: '🧾 Test Summary',
-                    reportTitles: 'Friendly Test Report'
-                ])
+                script {
+                    try {
+                        // Try publishing HTML summary
+                        publishHTML([
+                            reportDir: "${REPORT_DIR}",
+                            reportFiles: 'summary.html',
+                            reportName: '🧾 Test Summary'
+                        ])
+                        echo "✅ HTML report published successfully."
+                    } catch (err) {
+                        echo "⚠️ Failed to publish HTML summary: ${err.message}"
+                    }
+
+                    // Always archive for download
+                    archiveArtifacts artifacts: "${REPORT_DIR}/summary.html", onlyIfSuccessful: false
+                    echo "📄 Summary archived at: ${env.BUILD_URL}artifact/${REPORT_DIR}/summary.html"
+                }
             }
         }
     }

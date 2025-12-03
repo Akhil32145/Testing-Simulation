@@ -1,7 +1,7 @@
 pipeline {
     agent { label 'ubuntu-agent' }
     triggers{
-     cron('* * * * *')
+     cron('* * * * ')
     }
 
     parameters {

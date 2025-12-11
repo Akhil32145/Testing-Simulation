@@ -5,7 +5,7 @@ pipeline {
     }
 
     parameters {
-        string(name: 'RETRY_COUNT', defaultValue: '3', description: 'Number of retries for failed tests')
+        string(name: 'RETRY_COUNT', defaultValue: '5', description: 'Number of retries for failed tests')
     }
 
     environment {
